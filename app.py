@@ -71,6 +71,15 @@ def draw_pitch_matplotlib(ax):
     ax.plot([84, 84], [21, 79], linewidth=2)
     ax.plot([84, 100], [79, 79], linewidth=2)
 
+# 6-yard boxes (small boxes)
+ax.plot([0, 6], [37, 37], linewidth=2)
+ax.plot([6, 6], [37, 63], linewidth=2)
+ax.plot([6, 0], [63, 63], linewidth=2)
+
+ax.plot([100, 94], [37, 37], linewidth=2)
+ax.plot([94, 94], [37, 63], linewidth=2)
+ax.plot([94, 100], [63, 63], linewidth=2)
+
 def shot_map(df, title="Shot Map"):
     fig, ax = plt.subplots(figsize=(10, 6))
     draw_pitch_matplotlib(ax)
@@ -123,6 +132,23 @@ def make_pitch_figure():
     # Penalty boxes
     fig.add_trace(go.Scatter(x=[0, 16, 16, 0], y=[21, 21, 79, 79], mode="lines", hoverinfo="skip", showlegend=False))
     fig.add_trace(go.Scatter(x=[100, 84, 84, 100], y=[21, 21, 79, 79], mode="lines", hoverinfo="skip", showlegend=False))
+
+    # 6-yard boxes (small boxes)
+fig.add_trace(go.Scatter(
+    x=[0, 6, 6, 0],
+    y=[37, 37, 63, 63],
+    mode="lines",
+    hoverinfo="skip",
+    showlegend=False
+))
+
+fig.add_trace(go.Scatter(
+    x=[100, 94, 94, 100],
+    y=[37, 37, 63, 63],
+    mode="lines",
+    hoverinfo="skip",
+    showlegend=False
+))
 
     # Clickable grid points
     xs = np.arange(0, 101, 1)
