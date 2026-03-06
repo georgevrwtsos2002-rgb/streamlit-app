@@ -9,7 +9,7 @@ st.set_page_config(page_title="Super League Shot Helper", layout="wide")
 RESULTS = ["Goal", "Miss", "Saved", "Blocked"]
 
 # ---------------------------
-# Helpers
+# Session state
 # ---------------------------
 def init_state():
     if "shots" not in st.session_state:
@@ -22,14 +22,21 @@ def init_state():
     if "selected_y" not in st.session_state:
         st.session_state.selected_y = 50.0
 
+
+# ---------------------------
+# Validation
+# ---------------------------
 def validate_row(row: dict) -> tuple[bool, str]:
     try:
         minute = float(row["minute"])
         x = float(row["x"])
         y = float(row["y"])
-        if not (0 <= x <= 100 and 0 <= y <= 100):
-            return False, "Το x και το y πρέπει να είναι από 0 έως 100."
-        if minute < 0 or minute > 130:
+
+        if not (50 <= x <= 100):
+            return False, "Το x πρέπει να είναι από 50 έως 100 γιατί χρησιμοποιούμε μισό γήπεδο."
+        if not (0 <= y <= 100):
+            return False, "Το y πρέπει να είναι από 0 έως 100."
+        if not (0 <= minute <= 130):
             return False, "Το minute πρέπει να είναι από 0 έως 130."
     except Exception:
         return False, "minute / x / y πρέπει να είναι αριθμοί."
@@ -49,109 +56,157 @@ def validate_row(row: dict) -> tuple[bool, str]:
 
     return True, ""
 
-def draw_pitch_matplotlib(ax):
-    ax.set_xlim(0, 100)
+
+# ---------------------------
+# Matplotlib half pitch
+# ---------------------------
+def draw_half_pitch_matplotlib(ax):
+    ax.set_xlim(50, 100)
     ax.set_ylim(0, 100)
     ax.set_aspect("equal", adjustable="box")
     ax.axis("off")
 
-    # Outer lines
-    ax.plot([0, 100, 100, 0, 0], [0, 0, 100, 100, 0], linewidth=2)
-    # Halfway line
-    ax.plot([50, 50], [0, 100], linewidth=2)
-    # Center circle
-    ax.add_patch(plt.Circle((50, 50), 8.7, fill=False, linewidth=2))
+    # Outer boundary of half pitch
+    ax.plot([50, 100], [0, 0], linewidth=2)      # bottom
+    ax.plot([50, 100], [100, 100], linewidth=2)  # top
+    ax.plot([50, 50], [0, 100], linewidth=2)     # halfway line
+    ax.plot([100, 100], [0, 100], linewidth=2)   # goal line
 
-    # Penalty boxes
-    ax.plot([0, 16], [21, 21], linewidth=2)
-    ax.plot([16, 16], [21, 79], linewidth=2)
-    ax.plot([16, 0], [79, 79], linewidth=2)
-
-    ax.plot([100, 84], [21, 21], linewidth=2)
+    # Penalty area
+    ax.plot([84, 100], [21, 21], linewidth=2)
     ax.plot([84, 84], [21, 79], linewidth=2)
     ax.plot([84, 100], [79, 79], linewidth=2)
 
-# 6-yard boxes (small boxes)
-ax.plot([0, 6], [37, 37], linewidth=2)
-ax.plot([6, 6], [37, 63], linewidth=2)
-ax.plot([6, 0], [63, 63], linewidth=2)
+    # Small box
+    ax.plot([94, 100], [37, 37], linewidth=2)
+    ax.plot([94, 94], [37, 63], linewidth=2)
+    ax.plot([94, 100], [63, 63], linewidth=2)
 
-ax.plot([100, 94], [37, 37], linewidth=2)
-ax.plot([94, 94], [37, 63], linewidth=2)
-ax.plot([94, 100], [63, 63], linewidth=2)
+    # Goal
+    ax.plot([100, 102], [45, 45], linewidth=2)
+    ax.plot([102, 102], [45, 55], linewidth=2)
+    ax.plot([102, 100], [55, 55], linewidth=2)
+
+    # Penalty spot
+    ax.scatter([89], [50], s=20)
+
+    # Penalty arc
+    theta = np.linspace(-0.95, 0.95, 150)
+    r = 8.7
+    x_arc = 89 - r * np.cos(theta)
+    y_arc = 50 + r * np.sin(theta)
+    mask = x_arc <= 84
+    ax.plot(x_arc[mask], y_arc[mask], linewidth=2)
+
 
 def shot_map(df, title="Shot Map"):
-    fig, ax = plt.subplots(figsize=(10, 6))
-    draw_pitch_matplotlib(ax)
+    fig, ax = plt.subplots(figsize=(8, 10))
+    draw_half_pitch_matplotlib(ax)
 
     if len(df) == 0:
         ax.set_title(title)
         st.pyplot(fig, clear_figure=True)
         return
 
-    is_goal = df["result"].astype(str).str.lower().eq("goal")
-    sizes = (pd.to_numeric(df["xg"], errors="coerce").fillna(0).clip(0, 1) * 900) + 40
+    df_plot = df.copy()
+    df_plot["x"] = pd.to_numeric(df_plot["x"], errors="coerce")
+    df_plot["y"] = pd.to_numeric(df_plot["y"], errors="coerce")
+    df_plot["xg"] = pd.to_numeric(df_plot["xg"], errors="coerce").fillna(0)
+
+    is_goal = df_plot["result"].astype(str).str.lower().eq("goal")
+    sizes = (df_plot["xg"].clip(0, 1) * 900) + 40
 
     ax.scatter(
-        df.loc[~is_goal, "x"], df.loc[~is_goal, "y"],
-        s=sizes[~is_goal], alpha=0.65, marker="o", linewidths=0
+        df_plot.loc[~is_goal, "x"],
+        df_plot.loc[~is_goal, "y"],
+        s=sizes[~is_goal],
+        alpha=0.65,
+        marker="o",
+        linewidths=0
     )
+
     ax.scatter(
-        df.loc[is_goal, "x"], df.loc[is_goal, "y"],
-        s=sizes[is_goal], alpha=0.9, marker="*", linewidths=0
+        df_plot.loc[is_goal, "x"],
+        df_plot.loc[is_goal, "y"],
+        s=sizes[is_goal],
+        alpha=0.95,
+        marker="*",
+        linewidths=0
     )
 
     ax.set_title(title)
     st.pyplot(fig, clear_figure=True)
 
-def make_pitch_figure():
+
+# ---------------------------
+# Plotly half pitch selector
+# ---------------------------
+def make_half_pitch_figure():
     fig = go.Figure()
 
-    # Pitch lines
-    pitch_x = [0, 100, 100, 0, 0]
-    pitch_y = [0, 0, 100, 100, 0]
+    # Outer boundary
     fig.add_trace(go.Scatter(
-        x=pitch_x, y=pitch_y, mode="lines", name="Pitch",
-        hoverinfo="skip", showlegend=False
+        x=[50, 100, 100, 50, 50],
+        y=[0, 0, 100, 100, 0],
+        mode="lines",
+        hoverinfo="skip",
+        showlegend=False
     ))
 
+    # Penalty area
     fig.add_trace(go.Scatter(
-        x=[50, 50], y=[0, 100], mode="lines",
-        hoverinfo="skip", showlegend=False
+        x=[100, 84, 84, 100],
+        y=[21, 21, 79, 79],
+        mode="lines",
+        hoverinfo="skip",
+        showlegend=False
     ))
 
-    # Center circle (approx)
-    theta = np.linspace(0, 2 * np.pi, 200)
-    cx = 50 + 8.7 * np.cos(theta)
-    cy = 50 + 8.7 * np.sin(theta)
+    # Small box
     fig.add_trace(go.Scatter(
-        x=cx, y=cy, mode="lines",
-        hoverinfo="skip", showlegend=False
+        x=[100, 94, 94, 100],
+        y=[37, 37, 63, 63],
+        mode="lines",
+        hoverinfo="skip",
+        showlegend=False
     ))
 
-    # Penalty boxes
-    fig.add_trace(go.Scatter(x=[0, 16, 16, 0], y=[21, 21, 79, 79], mode="lines", hoverinfo="skip", showlegend=False))
-    fig.add_trace(go.Scatter(x=[100, 84, 84, 100], y=[21, 21, 79, 79], mode="lines", hoverinfo="skip", showlegend=False))
+    # Goal
+    fig.add_trace(go.Scatter(
+        x=[100, 102, 102, 100],
+        y=[45, 45, 55, 55],
+        mode="lines",
+        hoverinfo="skip",
+        showlegend=False
+    ))
 
-    # 6-yard boxes (small boxes)
-fig.add_trace(go.Scatter(
-    x=[0, 6, 6, 0],
-    y=[37, 37, 63, 63],
-    mode="lines",
-    hoverinfo="skip",
-    showlegend=False
-))
+    # Penalty spot
+    fig.add_trace(go.Scatter(
+        x=[89],
+        y=[50],
+        mode="markers",
+        marker=dict(size=6),
+        hoverinfo="skip",
+        showlegend=False
+    ))
 
-fig.add_trace(go.Scatter(
-    x=[100, 94, 94, 100],
-    y=[37, 37, 63, 63],
-    mode="lines",
-    hoverinfo="skip",
-    showlegend=False
-))
+    # Penalty arc
+    theta = np.linspace(-0.95, 0.95, 150)
+    r = 8.7
+    x_arc = 89 - r * np.cos(theta)
+    y_arc = 50 + r * np.sin(theta)
+    mask = x_arc <= 84
 
-    # Clickable grid points
-    xs = np.arange(0, 101, 1)
+    fig.add_trace(go.Scatter(
+        x=x_arc[mask],
+        y=y_arc[mask],
+        mode="lines",
+        hoverinfo="skip",
+        showlegend=False
+    ))
+
+    # Invisible clickable grid
+    xs = np.arange(50, 101, 1)
     ys = np.arange(0, 101, 1)
     grid_x, grid_y = np.meshgrid(xs, ys)
 
@@ -159,32 +214,31 @@ fig.add_trace(go.Scatter(
         x=grid_x.ravel(),
         y=grid_y.ravel(),
         mode="markers",
-        marker=dict(size=8, opacity=0.01),
-        customdata=np.column_stack([grid_x.ravel(), grid_y.ravel()]),
+        marker=dict(size=10, opacity=0.01),
         hovertemplate="x=%{x}<br>y=%{y}<extra></extra>",
-        name="click-grid",
         showlegend=False
     ))
 
-    # Current selected point
+    # Selected point
     fig.add_trace(go.Scatter(
         x=[st.session_state.selected_x],
         y=[st.session_state.selected_y],
         mode="markers",
         marker=dict(size=14, symbol="x"),
-        name="selected",
-        showlegend=False,
-        hovertemplate="Selected: x=%{x}, y=%{y}<extra></extra>"
+        hovertemplate="Selected: x=%{x}, y=%{y}<extra></extra>",
+        showlegend=False
     ))
 
     fig.update_layout(
-        height=600,
+        height=700,
         margin=dict(l=10, r=10, t=10, b=10),
-        xaxis=dict(range=[0, 100], showgrid=False, zeroline=False, visible=False),
+        xaxis=dict(range=[50, 103], showgrid=False, zeroline=False, visible=False),
         yaxis=dict(range=[0, 100], showgrid=False, zeroline=False, visible=False, scaleanchor="x", scaleratio=1),
         dragmode="select"
     )
+
     return fig
+
 
 # ---------------------------
 # App
@@ -192,14 +246,14 @@ fig.add_trace(go.Scatter(
 init_state()
 
 st.title("⚽ Super League Shot Helper")
-st.caption("Κάνε κλικ πάνω στο γήπεδο για να ορίσεις το σημείο του σουτ.")
+st.caption("Μισό γήπεδο με μικρή περιοχή — διάλεξε σημείο σουτ με κλικ.")
 
-left, right = st.columns([1.1, 0.9])
+left, right = st.columns([1.15, 0.85])
 
 with left:
-    st.subheader("1) Επίλεξε σημείο σουτ πάνω στο γήπεδο")
+    st.subheader("1) Επίλεξε σημείο σουτ πάνω στο μισό γήπεδο")
 
-    pitch_fig = make_pitch_figure()
+    pitch_fig = make_half_pitch_figure()
     event = st.plotly_chart(
         pitch_fig,
         key="pitch_selector",
@@ -207,13 +261,18 @@ with left:
         use_container_width=True
     )
 
-    # Read selected point from plotly selection
     if event and "selection" in event and event["selection"].get("points"):
         p = event["selection"]["points"][0]
-        st.session_state.selected_x = round(float(p["x"]), 1)
-        st.session_state.selected_y = round(float(p["y"]), 1)
+        x_val = float(p["x"])
+        y_val = float(p["y"])
 
-    st.info(f"Επιλεγμένο σημείο: x={st.session_state.selected_x}, y={st.session_state.selected_y}")
+        if 50 <= x_val <= 100 and 0 <= y_val <= 100:
+            st.session_state.selected_x = round(x_val, 1)
+            st.session_state.selected_y = round(y_val, 1)
+
+    st.info(
+        f"Επιλεγμένο σημείο: x={st.session_state.selected_x}, y={st.session_state.selected_y}"
+    )
 
 with right:
     st.subheader("2) Στοιχεία αγώνα")
@@ -236,8 +295,20 @@ with right:
         result = a4.selectbox("result", RESULTS, index=1)
 
         b1, b2, b3, b4 = st.columns(4)
-        x = b1.number_input("x", min_value=0.0, max_value=100.0, value=float(st.session_state.selected_x), step=0.5)
-        y = b2.number_input("y", min_value=0.0, max_value=100.0, value=float(st.session_state.selected_y), step=0.5)
+        x = b1.number_input(
+            "x",
+            min_value=50.0,
+            max_value=100.0,
+            value=float(st.session_state.selected_x),
+            step=0.5
+        )
+        y = b2.number_input(
+            "y",
+            min_value=0.0,
+            max_value=100.0,
+            value=float(st.session_state.selected_y),
+            step=0.5
+        )
         xg = b3.number_input("xg", min_value=0.0, max_value=1.0, value=0.10, step=0.01)
         shot_type = b4.text_input("shot_type", value="Open Play")
 
@@ -298,4 +369,4 @@ st.subheader("Shots table")
 st.dataframe(st.session_state.shots, use_container_width=True, height=260)
 
 st.subheader("Shot map")
-shot_map(st.session_state.shots, title="Shot Map")
+shot_map(st.session_state.shots, title="Half Pitch Shot Map")
