@@ -26,20 +26,18 @@ OPTIONAL_COLUMNS = [
 
 @st.cache_data
 def load_data():
-    if os.path.exists(DATA_FILE):
-        df = pd.read_csv(DATA_FILE)
-    else:
-        df = pd.DataFrame(columns=REQUIRED_COLUMNS + OPTIONAL_COLUMNS)
+    if not os.path.exists(DATA_FILE):
+        return pd.DataFrame(columns=REQUIRED_COLUMNS + OPTIONAL_COLUMNS)
+
+    df = pd.read_csv(DATA_FILE)
 
     for col in REQUIRED_COLUMNS + OPTIONAL_COLUMNS:
         if col not in df.columns:
             df[col] = np.nan
 
-    if len(df) > 0:
-        df["x"] = pd.to_numeric(df["x"], errors="coerce")
-        df["y"] = pd.to_numeric(df["y"], errors="coerce")
-        if "xg" in df.columns:
-            df["xg"] = pd.to_numeric(df["xg"], errors="coerce").fillna(0)
+    df["x"] = pd.to_numeric(df["x"], errors="coerce")
+    df["y"] = pd.to_numeric(df["y"], errors="coerce")
+    df["xg"] = pd.to_numeric(df["xg"], errors="coerce").fillna(0)
 
     return df
 
@@ -122,7 +120,7 @@ def build_player_shot_map(df, player_name):
         for _, row in d.iterrows():
             color = RESULT_COLORS.get(str(row["result"]), "gray")
             marker = "*" if row["is_goal"] else "o"
-            size = (row["xg"] * 900) + 50 if "xg" in d.columns else 120
+            size = (row["xg"] * 900) + 50
 
             ax.scatter(
                 row["x"],
@@ -157,7 +155,7 @@ def player_stats(df):
     d = enrich_df(df)
     shots = len(d)
     goals = int(d["is_goal"].sum())
-    xg = float(d["xg"].sum()) if "xg" in d.columns else 0.0
+    xg = float(d["xg"].sum())
     xg_per_shot = xg / shots if shots > 0 else 0.0
 
     return {
@@ -192,12 +190,12 @@ def shots_by_result(df):
 
 
 st.title("⚽ Player Shot Maps")
-st.caption("Δες από πού και πώς εκτελεί κάθε ποδοσφαιριστής μέσα στη σεζόν.")
+st.caption("Shot maps ανά παίκτη για όλη τη σεζόν.")
 
 df = load_data()
 
 if len(df) == 0:
-    st.warning("Δεν βρέθηκε το αρχείο season_shots.csv στο repository.")
+    st.warning("Δεν βρέθηκε το αρχείο season_shots.csv ή είναι κενό.")
     st.stop()
 
 players = sorted(df["player"].dropna().astype(str).unique().tolist())
@@ -208,38 +206,29 @@ with st.sidebar:
     selected_player = st.selectbox("Player", players)
 
     seasons = sorted(df["season"].dropna().astype(str).unique().tolist())
-    if len(seasons) > 0:
-        selected_seasons = st.multiselect("Season", seasons, default=seasons)
-    else:
-        selected_seasons = []
+    selected_seasons = st.multiselect("Season", seasons, default=seasons) if seasons else []
 
     shot_types = sorted(df["shot_type"].dropna().astype(str).unique().tolist())
-    if len(shot_types) > 0:
-        selected_shot_types = st.multiselect("Shot Type", shot_types, default=shot_types)
-    else:
-        selected_shot_types = []
+    selected_shot_types = st.multiselect("Shot Type", shot_types, default=shot_types) if shot_types else []
 
     body_parts = sorted(df["body_part"].dropna().astype(str).unique().tolist())
-    if len(body_parts) > 0:
-        selected_body_parts = st.multiselect("Body Part", body_parts, default=body_parts)
-    else:
-        selected_body_parts = []
+    selected_body_parts = st.multiselect("Body Part", body_parts, default=body_parts) if body_parts else []
 
     results = sorted(df["result"].dropna().astype(str).unique().tolist())
     selected_results = st.multiselect("Result", results, default=results)
 
 player_df = df[df["player"].astype(str) == selected_player].copy()
 
-if len(selected_seasons) > 0 and "season" in player_df.columns:
+if selected_seasons:
     player_df = player_df[player_df["season"].astype(str).isin(selected_seasons)]
 
-if len(selected_shot_types) > 0 and "shot_type" in player_df.columns:
+if selected_shot_types:
     player_df = player_df[player_df["shot_type"].astype(str).isin(selected_shot_types)]
 
-if len(selected_body_parts) > 0 and "body_part" in player_df.columns:
+if selected_body_parts:
     player_df = player_df[player_df["body_part"].astype(str).isin(selected_body_parts)]
 
-if len(selected_results) > 0:
+if selected_results:
     player_df = player_df[player_df["result"].astype(str).isin(selected_results)]
 
 stats = player_stats(player_df)
